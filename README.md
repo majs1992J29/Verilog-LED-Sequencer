@@ -108,9 +108,9 @@ vvp -n sim_shift7.vvp
 **Note:** The original `count_param.v` in the supplied archive has an unclosed header comment (`/*` without `*/`). Add the closing `*/` before `module count_param` before compiling the counter or integrated design. This repository documentation does not otherwise alter the original RTL.
 
 ## Scope
+The design targets the Terasic DE2-115 FPGA development board. It was developed and tested in Intel/Altera Quartus, with functional simulation performed in ModelSim.
 
-The repository is intended as a **personal HDL reference and source-code backup**, not as a complete board-specific Quartus project. FPGA pin assignments, timing constraints, compiled bitstreams, and tool-generated files are not included.
-
+This repository is maintained as a personal HDL reference and source-code backup. It includes the Verilog RTL modules and their testbenches, but not the complete Quartus project. FPGA pin assignments, timing constraints, project configuration, compiled bitstreams, and tool-generated files are not included. Rebuilding the design for the DE2-115 therefore requires recreating the relevant Quartus project settings.
 ## Maintainer
 
 [majs1992J29](https://github.com/majs1992J29)
