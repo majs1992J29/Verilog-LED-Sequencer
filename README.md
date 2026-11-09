@@ -1,118 +1,99 @@
 # Verilog LED Sequencer
 
-A configurable LED sequencer implemented in **Verilog HDL**. The design combines a parameterized counter with a 7-bit shift register to generate a back-and-forth, single-LED lighting pattern (similar to a *Knight Rider* effect).
+An eight-LED running-light controller implemented in **Verilog HDL** for the **Terasic DE2-115 FPGA development board**. The design combines a parameterized clock counter, a seven-bit **Johnson shift register**, and combinational LED decoding to produce a repeating, bidirectional light sequence.
 
-The design was **developed and tested using Intel/Altera Quartus**, with **ModelSim used for functional simulation and waveform analysis**. This repository keeps the **RTL source code and its testbenches** as a lightweight reference. Quartus project files, synthesis outputs, and generated simulation files are intentionally excluded.
+The original design was implemented with **Intel/Altera Quartus** and evaluated using **ModelSim** functional and timing simulations. Its behavior was also documented for the DE2-115 hardware.
 
-## Development and verification tools
+## Features
 
-- **Intel/Altera Quartus:** RTL development, compilation, and design testing.
-- **ModelSim:** Functional simulation of the Verilog modules using the included testbenches, with waveform inspection to verify their behavior.
+- **Bidirectional running-light pattern:** moves a single illuminated LED from one end of the eight-LED array to the other and back.
+- **Fourteen-step sequence:** uses the fourteen distinct states of a seven-bit Johnson counter.
+- **Configurable step interval:** a parameterized counter produces the shift-enable event.
+- **Enable and reset controls:** the sequence can be paused and returned to its initial LED pattern.
+- **Reusable building blocks:** the counter and shift register each have an independent testbench.
 
-## How it works
+## Design architecture
 
-```text
-             iCLK / iRST_n / iENABLE
-                       |
-                       v
-                +--------------+
-                | count_param  |
-                |  counter     |
-                +--------------+
-                       | oTC (once per Cuenta cycles)
-                       v
-                +--------------+
-          +---->|    shift7    |----> oPR[6:0]
-          |     | shift register|          |
-          |     +--------------+          v
-          |             | oSR        +-----------+
-          +---- NOT <---+            |  lights   |----> oLED[7:0]
-                                     |  decoder  |
-                                     +-----------+
+```mermaid
+flowchart TD
+    CLK[System clock and active-low reset] --> COUNT[count_param]
+    EN[Enable] --> COUNT
+    COUNT -->|Terminal count: TC1| SHIFT[shift7: 7-bit Johnson register]
+    CLK --> SHIFT
+    SHIFT -->|Parallel state| DEC[LED pattern decoder in lights]
+    SHIFT -->|Inverted serial feedback| SHIFT
+    DEC --> OUT[8-bit LED output]
 ```
 
-- **`count_param`** generates a terminal-count pulse that controls the speed of the sequence.
-- **`shift7`** advances its register when enabled. Its serial input is the inverse of its serial output, creating a repeating sequence of ones and zeros.
-- **`lights`** maps the shift-register states to an 8-bit, one-hot LED output, moving the active LED in both directions.
+The top-level module, **`lights`**, connects two reusable blocks:
 
-## Repository structure
+1. **`count_param`** counts clock cycles and asserts a terminal-count signal. The top-level parameter `Cuenta` determines how frequently the LEDs advance.
+2. **`shift7`** shifts a new bit into the register when terminal count is asserted. Feeding back the inverted serial output produces a Johnson-counter sequence.
 
-```text
-Verilog-LED-Sequencer/
-├── rtl/
-│   ├── count_param.v   # Parameterized up/down counter
-│   ├── shift7.v        # Parameterized shift register (7 bits by default)
-│   └── lights.v        # Top-level LED sequencer
-├── tb/
-│   ├── tb_count.v      # Counter testbench
-│   ├── tb_shift7.v     # Shift register testbench
-│   └── tb_lights.v     # Integrated LED sequencer testbench
-└── README.md
-```
+A combinational decoder in `lights` maps the fourteen register states to an eight-bit, one-LED-at-a-time output.
 
-## Top-level interface
+With the original **50 MHz** board clock and `Cuenta = 12_500_000`, the intended LED step interval is **0.25 seconds**. Testbenches override the parameter with a smaller value to shorten simulation time.
 
-The top-level module is **`lights`**.
+## RTL modules
+
+| Module | Responsibility |
+| --- | --- |
+| [`lights.v`](rtl/lights.v) | Top-level sequencer, counter/register integration, and 14-state-to-LED decoding. |
+| [`count_param.v`](rtl/count_param.v) | Parameterized up/down counter with enable, synchronous active-low reset, and terminal-count output. |
+| [`shift7.v`](rtl/shift7.v) | Seven-bit serial-in/serial-out shift register with parallel output and synchronous active-low reset. |
+
+### Top-level interface
 
 | Signal | Direction | Description |
 | --- | --- | --- |
 | `iCLK` | Input | System clock. |
-| `iRST_n` | Input | Active-low, synchronous reset. |
-| `iENABLE` | Input | Enables the counter and therefore sequence progression. |
-| `oLED[7:0]` | Output | Eight LED control bits; normally one LED is active at a time. |
+| `iRST_n` | Input | Active-low synchronous reset. |
+| `iENABLE` | Input | Enables or pauses sequence progression. |
+| `oLED[7:0]` | Output | Eight-bit LED pattern. |
 
-### Parameter
+The top-level parameter **`Cuenta`** sets the timing-counter modulus; `shift7` has a configurable register-width parameter `n` (used as seven bits in this design).
 
-| Parameter | Default | Description |
-| --- | --- | --- |
-| `Cuenta` | `12500000` | Counter period, in input clock cycles, between shifts of the LED pattern. |
+## Functional verification
 
-The LED step rate is approximately `fCLK / Cuenta` while the design is enabled. For faster simulation, `tb_lights.v` overrides `Cuenta` with `10`.
+The repository includes three Verilog testbenches:
 
-## Testbenches
-
-The included testbenches provide input stimulus for:
-
-| Testbench | Scenarios |
+| Testbench | Scenarios covered |
 | --- | --- |
-| `tb_count.v` | Up-counting, down-counting, synchronous reset, and enable behavior. |
-| `tb_shift7.v` | Serial shifting, synchronous reset, and enable behavior. |
-| `tb_lights.v` | LED sequence, synchronous reset, and enable behavior. |
+| [`tb_count.v`](tb/tb_count.v) | Up-counting, down-counting, synchronous reset, enable behavior, and terminal count. |
+| [`tb_shift7.v`](tb/tb_shift7.v) | Serial shifting, seven-bit parallel output, synchronous reset, and shift enable. |
+| [`tb_lights.v`](tb/tb_lights.v) | Fourteen-step running-light sequence, reset to the first LED, and sequence pause/resume. |
 
-These are **stimulus-based testbenches**: they use simulation messages and are intended for waveform inspection, rather than automatic pass/fail assertions.
+The original verification included **functional and timing waveform inspection in ModelSim**. The testbenches mainly generate stimulus and display case markers; they are **not fully automated assertion-based regression tests**. The original documentation also describes hardware-level validation of the LED direction, reset, and enable behavior.
 
-## Simulation
+## Development environment
 
-The original design was simulated using **ModelSim**. The testbenches can also be run with other simulators that support the required Verilog constructs.
+| Item | Details |
+| --- | --- |
+| FPGA development board | Terasic DE2-115 |
+| FPGA family | Intel/Altera Cyclone IV E |
+| Hardware description language | Verilog HDL |
+| FPGA design | Intel/Altera Quartus |
+| Simulation | ModelSim |
+| Nominal board clock | 50 MHz |
 
-Use any simulator that supports the Verilog constructs used in the design (including `$clog2`). For example, with **Icarus Verilog**, run the following from the repository root:
+## Repository layout
 
-```bash
-iverilog -g2012 -s tb_lights -o sim_lights.vvp \
-    rtl/count_param.v rtl/shift7.v rtl/lights.v tb/tb_lights.v
-vvp -n sim_lights.vvp
+```text
+Verilog-LED-Sequencer/
+├── rtl/
+│   ├── count_param.v
+│   ├── lights.v
+│   └── shift7.v
+├── tb/
+│   ├── tb_count.v
+│   ├── tb_lights.v
+│   └── tb_shift7.v
+└── README.md
 ```
 
-To simulate the other modules individually, change the selected top-level testbench and included files:
+## Reusing the design
 
-```bash
-# Counter
-iverilog -g2012 -s tb_count -o sim_count.vvp rtl/count_param.v tb/tb_count.v
-vvp -n sim_count.vvp
+Create a Quartus project targeting the DE2-115's FPGA device, add the three files in `rtl/`, and select **`lights`** as the top-level entity. Restore the appropriate clock, reset, enable-switch, and LED pin assignments from the board documentation. For simulation, compile the same RTL sources alongside one of the testbenches in `tb/` and select that testbench as the simulation top.
 
-# Shift register
-iverilog -g2012 -s tb_shift7 -o sim_shift7.vvp rtl/shift7.v tb/tb_shift7.v
-vvp -n sim_shift7.vvp
-```
+**Scope:** This repository contains the HDL sources and testbenches, not the original full Quartus project, pin assignments, timing constraints, or compiled FPGA bitstreams. Rebuilding for hardware requires recreating those project settings. The original verification is documented; the sources have not been rerun as part of this README revision.
 
-**Note:** The original `count_param.v` in the supplied archive has an unclosed header comment (`/*` without `*/`). Add the closing `*/` before `module count_param` before compiling the counter or integrated design. This repository documentation does not otherwise alter the original RTL.
-
-## Scope
-The design targets the Terasic DE2-115 FPGA development board. It was developed and tested in Intel/Altera Quartus, with functional simulation performed in ModelSim.
-
-This repository is maintained as a personal HDL reference and source-code backup. It includes the Verilog RTL modules and their testbenches, but not the complete Quartus project. FPGA pin assignments, timing constraints, project configuration, compiled bitstreams, and tool-generated files are not included. Rebuilding the design for the DE2-115 therefore requires recreating the relevant Quartus project settings.
-## Maintainer
-
-[majs1992J29](https://github.com/majs1992J29)
-
-Original author attributions, where present, remain in the source files.
